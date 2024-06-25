@@ -1,3 +1,6 @@
+import json
+from json import JSONDecodeError
+
 import cv2
 import numpy as np
 import mss
@@ -6,7 +9,7 @@ import datetime
 class MinimapScanner:
     def __init__(self, map_images, monitor, gui_instance,  window_size=10, tolerance=0.30):
         self.map_images = map_images
-        self.monitor = monitor
+        self.monitor = self.load_position_from_file(monitor)
         self.window_size = window_size
         self.tolerance = tolerance
         self.gui_instance = gui_instance
@@ -28,7 +31,10 @@ class MinimapScanner:
                 best_score = score
                 best_map_path = map_image_path
 
-        return best_map_path
+        if best_score > 20:
+            return best_map_path
+        else:
+            return None
 
     def compare_images(self, query_img, map_image_path):
         img2 = cv2.imread(map_image_path, cv2.IMREAD_GRAYSCALE)
@@ -48,7 +54,6 @@ class MinimapScanner:
         return len(good_matches)
 
     def update_rectangle(self, query_img, map_image_path):
-        print(datetime.datetime.now() )
         img2 = cv2.imread(map_image_path, cv2.IMREAD_GRAYSCALE)
 
         sift = cv2.SIFT_create()
@@ -79,8 +84,19 @@ class MinimapScanner:
         return None, None, None, None
 
     def start_continuous_scanning(self, best_map_path, update_callback):
-        while self.gui_instance.scanning_active:
+        while self.gui_instance.scanning_active and not self.gui_instance.stop_event.is_set():
             query_img = self.capture_minimap()
             x, y, w, h = self.update_rectangle(query_img, best_map_path)
             update_callback(x, y, w, h)
-            time.sleep(1)
+            time.sleep(float(self.gui_instance.update_interval))
+
+    def load_position_from_file(self, monitor):
+        try:
+            with open('minimap_position.json', 'r') as file:
+                try:
+                    json_position = json.load(file)
+                    return json_position
+                except JSONDecodeError:
+                    return monitor
+        except FileNotFoundError:
+            return monitor
