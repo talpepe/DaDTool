@@ -4,6 +4,8 @@ import tkinter as tk
 from json import JSONDecodeError
 from tkinter import filedialog, messagebox, Text
 from PIL import Image, ImageTk
+from matplotlib import pyplot as plt
+
 import map_handler
 from minimap_scanner import MinimapScanner
 import threading

@@ -6,13 +6,19 @@ import numpy as np
 import mss
 import time
 import datetime
+
+
 class MinimapScanner:
-    def __init__(self, map_images, monitor, gui_instance,  window_size=10, tolerance=0.30):
+    def __init__(self, map_images, monitor, gui_instance, window_size=10, tolerance=0.30):
         self.map_images = map_images
         self.monitor = self.load_position_from_file(monitor)
         self.window_size = window_size
         self.tolerance = tolerance
         self.gui_instance = gui_instance
+        self.bounding_box = None
+        self.cached_map_image = None
+        self.cached_map_path = None
+
     def capture_minimap(self):
         with mss.mss() as sct:
             screenshot = sct.grab(self.monitor)
@@ -32,16 +38,18 @@ class MinimapScanner:
                 best_map_path = map_image_path
 
         if best_score > 20:
+            self.cached_map_path = best_map_path
+            self.cached_map_image = cv2.imread(best_map_path, cv2.IMREAD_GRAYSCALE)
             return best_map_path
         else:
             return None
 
     def compare_images(self, query_img, map_image_path):
-        img2 = cv2.imread(map_image_path, cv2.IMREAD_GRAYSCALE)
+        map_image = cv2.imread(map_image_path, cv2.IMREAD_GRAYSCALE)
 
         sift = cv2.SIFT_create()
         kp1, des1 = sift.detectAndCompute(query_img, None)
-        kp2, des2 = sift.detectAndCompute(img2, None)
+        kp2, des2 = sift.detectAndCompute(map_image, None)
 
         bf = cv2.BFMatcher()
         matches = bf.knnMatch(des1, des2, k=2)
@@ -53,12 +61,18 @@ class MinimapScanner:
 
         return len(good_matches)
 
-    def update_rectangle(self, query_img, map_image_path):
-        img2 = cv2.imread(map_image_path, cv2.IMREAD_GRAYSCALE)
+    def update_rectangle(self, query_img):
+        if self.bounding_box:
+            x, y, w, h = self.bounding_box
+            map_image = self.cached_map_image[y:y + h, x:x + w]
+            offset_x, offset_y = x, y  # Remember the offset
+        else:
+            map_image = self.cached_map_image
+            offset_x, offset_y = 0, 0
 
         sift = cv2.SIFT_create()
         kp1, des1 = sift.detectAndCompute(query_img, None)
-        kp2, des2 = sift.detectAndCompute(img2, None)
+        kp2, des2 = sift.detectAndCompute(map_image, None)
 
         bf = cv2.BFMatcher()
         matches = bf.knnMatch(des1, des2, k=2)
@@ -69,7 +83,6 @@ class MinimapScanner:
                 good.append(m)
 
         if len(good) > 4:
-
             src_pts = np.float32([kp1[m.queryIdx].pt for m in good]).reshape(-1, 1, 2)
             dst_pts = np.float32([kp2[m.trainIdx].pt for m in good]).reshape(-1, 1, 2)
 
@@ -79,15 +92,24 @@ class MinimapScanner:
             dst = cv2.perspectiveTransform(pts, M)
 
             x, y, w, h = cv2.boundingRect(dst)
-            return x, y, w, h
+
+            # Update bounding box
+            padding = 15  # Adjust this value as needed
+            self.bounding_box = (
+            max(0, x + offset_x - padding), max(0, y + offset_y - padding), w + 2 * padding, h + 2 * padding)
+
+            return x + offset_x, y + offset_y, w, h
 
         return None, None, None, None
 
     def start_continuous_scanning(self, best_map_path, update_callback):
         while self.gui_instance.scanning_active and not self.gui_instance.stop_event.is_set():
             query_img = self.capture_minimap()
-            x, y, w, h = self.update_rectangle(query_img, best_map_path)
-            update_callback(x, y, w, h)
+
+            x, y, w, h = self.update_rectangle(query_img)
+            if x is not None and y is not None and w is not None and h is not None:
+                update_callback(x, y, w, h)
+
             time.sleep(float(self.gui_instance.update_interval))
 
     def load_position_from_file(self, monitor):
