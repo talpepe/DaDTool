@@ -5,6 +5,7 @@ from json import JSONDecodeError
 from tkinter import filedialog, messagebox, Text
 from PIL import Image, ImageTk
 from matplotlib import pyplot as plt
+from configparser import ConfigParser
 
 import map_handler
 from minimap_scanner import MinimapScanner
@@ -12,10 +13,13 @@ import threading
 
 class DarkAndDarkerTool:
     def __init__(self, root):
+        self.settings_config = ConfigParser()
+        self.settings_config.read('settings.ini')
         self.root = root
         self.root.title("Dark and Darker Utility Tool")
         self.root.geometry("300x400")
         self.map_handler = map_handler.MapHandler()
+        self.button_start = None
         self.setup_ui()
         self.monitor = {"top": 880, "left": 2800, "width": 400, "height": 600}
         self.best_map_path = None
@@ -25,57 +29,82 @@ class DarkAndDarkerTool:
         self.rect = None
         self.player_rect = None
         self.scanning_active = None
-        self.update_interval = 0.2
-        self.map_scalar = 1
+        self.update_interval = self.settings_config.get('main', 'update_interval')
+        self.map_scalar = float(self.settings_config.get('main', 'map_scalar'))
+        self.map_opacity = float(self.settings_config.get('main', 'map_opacity'))
+        self.always_on_top = int(self.settings_config.get('main', 'always_on_top'))
         self.stop_event = threading.Event()
+
+
+
 
     def setup_ui(self):
         frame = tk.Frame(self.root)
         frame.pack(pady=20)
 
-        button_start = tk.Button(frame, text="Start Scanning", command=self.start_scanning, width=20, height=2)
+        self.button_start = tk.Button(frame, text="Start Scanning", command=self.scan_button_action, width=20, height=2)
         button_select = tk.Button(frame, text="Select Maps", command=self.select_maps, width=20, height=2)
         button_help = tk.Button(frame, text="Help", command=self.help_function, width=20, height=2)
         button_select_minimap = tk.Button(frame, text="Select Minimap Region", command=self.select_minimap_region, width=20, height=2)
         button_settings = tk.Button(frame, text="Settings", command=self.open_settings, width=20, height=2)
 
-        button_start.pack(pady=10)
+        self.button_start.pack(pady=10)
         button_select_minimap.pack(pady=10)
         button_select.pack(pady=10)
         button_settings.pack(pady=10)
         button_help.pack(pady=10)
 
+
     def open_settings(self):
+
         self.settings_window = tk.Toplevel(self.root)
         self.settings_window.title("Settings")
         self.settings_window.geometry("200x350")
 
-        tk.Label(self.settings_window, text="Map scalar", anchor='center').grid(row=0)
-        tk.Label(self.settings_window, text="Update interval",  anchor='center').grid(row=1)
+        tk.Label(self.settings_window, text="Map scalar", justify="left", anchor='w').grid(sticky='w', row=0)
+        tk.Label(self.settings_window, text="Update interval", justify="left", anchor='w').grid(sticky='w',row=1)
+        tk.Label(self.settings_window, text="Map opacity", justify="left", anchor='w').grid(sticky='w',row=2)
+        # tk.Label(self.settings_window, text="Always on top", anchor='center').grid(row=3)
 
         map_scalar_entry_text = tk.StringVar()
         update_interval_entry_text = tk.StringVar()
+        map_opacity_entry_text = tk.StringVar()
+        always_on_top_entry = tk.IntVar()
 
-        map_scalar_entry = tk.Entry(self.settings_window, textvariable=map_scalar_entry_text,width=10)
+        map_scalar_entry = tk.Entry(self.settings_window, textvariable=map_scalar_entry_text, width=10)
         update_interval_entry = tk.Entry(self.settings_window, textvariable=update_interval_entry_text, width=10)
+        map_opacity_entry = tk.Entry(self.settings_window, textvariable=map_opacity_entry_text, width=10)
 
         map_scalar_entry_text.set(self.map_scalar)
         update_interval_entry_text.set(self.update_interval)
+        map_opacity_entry_text.set(self.map_opacity)
+
         self.settings_window.columnconfigure(0, weight=1)
         self.settings_window.columnconfigure(1, weight=1)
 
+        always_on_top = tk.Checkbutton(self.settings_window, text="Always on top", variable=always_on_top_entry,
+                         onvalue=1, offvalue=0, height=5,
+                         width=20, justify="left", anchor='w')
+
+        if self.always_on_top:
+            always_on_top.select()
+        else:
+            always_on_top.deselect()
 
         map_scalar_entry.grid(row=0, column=1, pady=5)
         update_interval_entry.grid(row=1, column=1, pady=5)
+        map_opacity_entry.grid(row=2, column=1, pady=5)
+        always_on_top.grid(row=3, column=0, pady=5, sticky='w')
 
         tk.Button(self.settings_window,
                   text='Apply',
-                  command= lambda: self.update_settings(update_interval_entry.get(), map_scalar_entry.get())).grid(row=3,
+                  command= lambda: self.update_settings(update_interval_entry.get(), map_scalar_entry.get(), map_opacity_entry.get(),
+                                                        always_on_top_entry.get())).grid(row=4,
                                             column=0,
                                             sticky='ew',
                                             pady=4)
         tk.Button(self.settings_window,
-                  text='Exit', command=lambda: self.destroy_window(self.settings_window)).grid(row=3,
+                  text='Exit', command=lambda: self.destroy_window(self.settings_window)).grid(row=4,
                                                                column=1,
                                                                sticky='ew',
                                                                pady=4)
@@ -83,15 +112,42 @@ class DarkAndDarkerTool:
 
     def destroy_window(self, w):
         w.destroy()
-    def update_settings(self, interval, scalar):
-        self.update_interval = float(interval)
-        self.map_scalar = float(scalar)
-        print(interval, scalar)
-        return
 
+    def update_settings(self, interval, scalar, opacity, aot):
+        try:
+            interval = float(interval)
+            scalar = float(scalar)
+            opacity = float(opacity)
+
+            if not (0.1 <= scalar <= 10):
+                raise ValueError("Map scalar must be between 0.1 and 10")
+            if not (0.05 <= interval <= 5):
+                raise ValueError("Update interval must be between 0.05 and 5")
+            if not (0 <= opacity <= 1):
+                raise ValueError("Map opacity must be between 0 and 1")
+
+            self.update_interval = interval
+            self.map_scalar = scalar
+            self.map_opacity = opacity
+            self.always_on_top = aot
+            self.settings_config.set('main', 'update_interval', str(self.update_interval))
+            self.settings_config.set('main', 'map_scalar', str(self.map_scalar))
+            self.settings_config.set('main', 'map_opacity', str(self.map_opacity))
+            self.settings_config.set('main', 'always_on_top', str(aot))
+
+            with open('settings.ini', 'w') as configfile:
+                self.settings_config.write(configfile)
+
+        except ValueError as e:
+            messagebox.showerror("Invalid Input", str(e))
+            return
+
+        print(interval, scalar, opacity)
+        return
 
     def start_scanning(self):
         if self.scanning_active is False or self.scanning_active is None:
+
             self.stop_event.clear()
             self.maps = self.map_handler.get_maps()
             if not self.maps:
@@ -107,12 +163,15 @@ class DarkAndDarkerTool:
 
             if self.best_map_path:
                 self.scanning_active = True
+                self.button_start.configure(text="Stop Scanning")
                 self.update_rectangle_continuously()
+
 
 
     def on_close(self):
         self.scanning_active = False
         self.stop_event.set()
+        self.button_start.configure(text="Start Scanning")
         if self.map_window is not None:
             self.map_window.destroy()
 
@@ -130,7 +189,7 @@ class DarkAndDarkerTool:
             self.show_matching_region(self.best_map_path, x, y, w, h)
 
     def show_matching_region(self, map_image_path, x, y, w, h):
-        if (self.map_window is None or not self.map_window.winfo_exists()) and not self.stop_event.isSet() :
+        if (self.map_window is None or not self.map_window.winfo_exists()) and not self.stop_event.isSet():
             map_image = Image.open(map_image_path)
             if self.map_scalar != 1:
                 original_width, original_height = map_image.size
@@ -142,6 +201,8 @@ class DarkAndDarkerTool:
             self.map_window = tk.Toplevel(self.root)
             self.map_window.title("Matching Region")
             self.map_window.geometry(f"{map_image.width()}x{map_image.height()}")
+            self.map_window.attributes("-topmost", self.always_on_top)
+            self.map_window.attributes("-alpha", self.map_opacity)
             self.map_window.protocol("WM_DELETE_WINDOW", self.on_close)
 
             self.canvas = tk.Canvas(self.map_window, width=map_image.width(), height=map_image.height())
@@ -168,6 +229,17 @@ class DarkAndDarkerTool:
 
             self.rect = self.canvas.create_rectangle(x, y, x + w, y + h, outline='red', width=2)
             self.player_rect = self.canvas.create_rectangle(player_x, player_y , player_x+ (16*self.map_scalar), player_y + (16*self.map_scalar), fill='red', width=2)
+
+    def close_map(self):
+        self.map_window.destroy();
+
+    def scan_button_action(self):
+        if self.scanning_active is True:
+            self.close_map()
+            self.on_close()
+        else:
+            self.start_scanning()
+
 
     def select_maps(self):
         self.new_window = tk.Toplevel(self.root)
