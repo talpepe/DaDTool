@@ -59,3 +59,7 @@ Settings contain some settings for user convenience.
 If all goes well, this is how it should look!
 
 ![image](https://github.com/talpepe/DaDTool/assets/10613298/0e2952ea-ce43-4ac1-8da5-54f1707edfe7)
+
+
+https://github.com/talpepe/DaDTool/assets/10613298/4a05bc55-2c0c-468a-af8c-7c69d4cc02e8
+
