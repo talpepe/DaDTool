@@ -38,6 +38,7 @@ class DarkAndDarkerTool:
 
 
 
+
     def setup_ui(self):
         frame = tk.Frame(self.root)
         frame.pack(pady=20)
@@ -165,6 +166,8 @@ class DarkAndDarkerTool:
                 self.scanning_active = True
                 self.button_start.configure(text="Stop Scanning")
                 self.update_rectangle_continuously()
+            else:
+                messagebox.showerror("No match found!", "Make sure minimap is visible when starting to scan, and minimap region is selected correctly")
 
 
 
@@ -265,7 +268,20 @@ class DarkAndDarkerTool:
         self.select_maps_text.set("Loaded maps: \n " + self.map_handler.get_maps_as_lb_string())
 
     def help_function(self):
-        messagebox.showinfo("Help", "Help functionality will be implemented here.")
+        help_window = tk.Toplevel(self.root)
+        help_window.title("Help")
+        help_window.geometry("800x350")
+
+        help_text = tk.StringVar()
+        help_text.set("First, select the current map rotation with the Select Maps button. Grab them from interactive map sites. \n "
+                           "Then, in game, select the minimap region with Select Region button. \n I suggest being symmterical around the player icon"
+                           "and getting as much of the minimap without the UI. \n"
+                           "After those two steps, you can start scanning! Make sure the minimap is visible when starting to scan."
+                           )
+        label = tk.Label(help_window, textvariable=help_text)
+        label.pack()
+
+
 
     def select_minimap_region(self):
         overlay = tk.Toplevel(self.root)
